@@ -1,0 +1,5 @@
+*.o
+*.a
+/test_kat
+/bench
+/test_bearssl
