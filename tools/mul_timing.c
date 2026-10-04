@@ -7,8 +7,8 @@
  * aren't constant time on this CPU, and the pattern says how to mask it.
  * 68k only (gcc inline assembly); integers only.
  *
- *   mul_timing [rounds]     (default 40000: about a second a line on a
- *                           32 MHz 68030)
+ *   mul_timing [rounds [runs]]   (default 25000 and 5: about five
+ *                                minutes on a 32 MHz 68030)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -92,23 +92,48 @@ static const unsigned long pats[] = {
 };
 #define NPAT	(sizeof pats / sizeof pats[0])
 
+/* ns per operation, without overflowing a 32-bit long */
+static long per_op(long t, long per)
+{
+	return t / per * 1000 + t % per * 1000 / per;
+}
+
+static long measure(int v, unsigned long p, long rounds)
+{
+	switch (v) {
+	case 0: return time_l(p, 0xffffffffUL, rounds);
+	case 1: return time_l(0xffffffffUL, p, rounds);
+	case 2: return time_w(p, 0xffffffffUL, rounds);
+	default: return time_w(0xffffffffUL, p, rounds);
+	}
+}
+
 int main(int argc, char **argv)
 {
-	long rounds = argc > 1 ? atol(argv[1]) : 40000, per = rounds * 16, t;
+	long rounds = argc > 1 ? atol(argv[1]) : 25000, per = rounds * 16, t;
+	int reps = argc > 2 ? atoi(argv[2]) : 5, r, v;
+	static long best[NPAT][4], worst[NPAT][4];
 	size_t i;
 
-	printf("ns per (move.l + multiply), %ld of each:\n", per);
-	printf("  operand      mulu.l src  mulu.l dst  mulu.w src  mulu.w dst\n");
+	/* interrupts only ever add time: interleave the cases, keep each
+	 * one's fastest run */
+	for (r = 0; r < reps; r++)
+		for (i = 0; i < NPAT; i++)
+			for (v = 0; v < 4; v++) {
+				t = measure(v, pats[i], rounds);
+				if (r == 0 || t < best[i][v])
+					best[i][v] = t;
+				if (r == 0 || t > worst[i][v])
+					worst[i][v] = t;
+			}
+	printf("ns per (move.l + multiply), fastest of %d runs of %ld"
+		" (slowest in brackets):\n", reps, per);
+	printf("  operand     mulu.l src     mulu.l dst     mulu.w src     mulu.w dst\n");
 	for (i = 0; i < NPAT; i++) {
 		printf("  %08lx", pats[i]);
-		t = time_l(pats[i], 0xffffffffUL, rounds);
-		printf("  %10ld", t * 1000 / per);
-		t = time_l(0xffffffffUL, pats[i], rounds);
-		printf("  %10ld", t * 1000 / per);
-		t = time_w(pats[i], 0xffffffffUL, rounds);
-		printf("  %10ld", t * 1000 / per);
-		t = time_w(0xffffffffUL, pats[i], rounds);
-		printf("  %10ld\n", t * 1000 / per);
+		for (v = 0; v < 4; v++)
+			printf("  %5ld (%5ld)", per_op(best[i][v], per), per_op(worst[i][v], per));
+		printf("\n");
 	}
 	return 0;
 }
