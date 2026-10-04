@@ -119,6 +119,9 @@ the 64-bit `mulu.l`, so `-m68060` and `-m68020-60` builds use the C loop
 (`uint64_t`), as does every other machine. The 68000's multiply is
 16x16 -> 32, so it is slow there either way.
 
+`tools/mul_timing.c` (68k only) times `mulu.l` and `mulu.w` with
+operand patterns, to see what a CPU's multiply time depends on.
+
 ## Tests
 
 - `test_kat` checks known answers made by `tests/gen_vectors.py` with
