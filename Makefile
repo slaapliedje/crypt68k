@@ -15,12 +15,12 @@ AR	?= ar
 CFLAGS	?= -O2
 # (CFLAGS on the command line replaces the file's, so ours are apart)
 ALL	= $(CFLAGS) -Wall -Wextra -Iinclude -Isrc
-LIBOBJ	= src/mont.o src/sigmath.o src/ecdsa.o
+LIBOBJ	= src/mont.o src/sigmath.o src/ecdsa.o src/x25519.o src/fe_m68k.o
 
 BEARSSL_LIB ?= $(BEARSSL)/build/libbearssl.a
 
 ifneq ($(BEARSSL),)
-LIBOBJ	+= src/bearssl.o
+LIBOBJ	+= src/bearssl.o src/bearssl_x25519.o
 ALL	+= -I$(BEARSSL)/inc
 EXTRA	= test_bearssl
 endif
@@ -30,7 +30,8 @@ all: libcrypt68k.a test_kat bench $(EXTRA)
 libcrypt68k.a: $(LIBOBJ)
 	$(AR) rcs $@ $^
 
-src/%.o: src/%.c include/crypt68k.h include/crypt68k_bearssl.h src/mont.h src/curves.h
+src/%.o: src/%.c include/crypt68k.h include/crypt68k_bearssl.h src/mont.h src/curves.h \
+		src/cpu.h src/x25519.h
 	$(CC) $(ALL) -c $< -o $@
 
 test_kat: tests/test_kat.c tests/vectors.h libcrypt68k.a

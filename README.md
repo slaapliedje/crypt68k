@@ -1,9 +1,9 @@
 # crypt68k
 
-Fast signature checks for 68k machines: RSA's public operation, and
-ECDSA on P-256 and P-384. They're what a TLS client spends its first
-visit to a site on: checking the certificate chain and the server's key
-exchange. Plain C89 with one hand-written 68020/030/040 loop, MIT
+Fast public-key arithmetic for 68k machines, for TLS clients: RSA's
+public operation and ECDSA on P-256 and P-384 (checking certificate
+chains and the server's key exchange), and X25519 (the key exchange
+itself). Plain C89 with hand-written 68020/030/040 inner loops, MIT
 licensed, and a drop-in for [BearSSL](https://bearssl.org).
 
 On a 32 MHz 68030 (an Atari TT030), against BearSSL 0.6's fastest code
@@ -23,13 +23,24 @@ In [Manx](https://github.com/slaapliedje/manx), the browser it comes
 from, a TT's first visit to a site with a Let's Encrypt P-384 chain went
 from 147 s to 27 s.
 
-## Only for public data
+## Time
 
-**Everything here takes a time that depends on its inputs.** That is
-what makes it fast, and it is fine for checking signatures: the
+**The signature checks take a time that depends on their inputs.** That
+is what makes them fast, and it is fine for checking signatures: the
 signature, the public key and the hash are all public. It is not fine
-for anything secret. Never use crypt68k to sign, to decrypt, to encrypt
-a secret with RSA (RSA key exchange), or for a key exchange of any kind.
+for anything secret: never use them to sign, to decrypt, or to encrypt
+a secret with RSA (RSA key exchange).
+
+**X25519 is built the other way:** no branch and no memory address in
+it depends on the scalar or the point; the ladder swaps with masks,
+carries are arithmetic, the inversion is a fixed chain. But it can only
+be as constant-time as the CPU's multiply instruction, and Motorola's
+MC68030 manual marks `MULU`'s execution time "data dependent" (the
+68020 likely shares it; not checked). BearSSL's own X25519 uses the same
+instruction there.
+What the 68030's timing depends on is being measured; until then, on a
+68020 or 68030, treat X25519 as safe for ephemeral keys (a TLS client's,
+new for every handshake) and not for long-lived ones.
 
 ## Why it's faster
 
@@ -39,6 +50,10 @@ a secret with RSA (RSA key exchange), or for a key exchange of any kind.
   multiplications for e = 65537. BearSSL's general modpow, built to keep
   a private exponent secret, does two for every bit of the exponent's
   bytes: 48.
+- **X25519:** 8 limbs of 32 bits kept below 2^256, what overflows
+  folded back as 38 (2^256 = 2p + 38); the 512-bit multiply and square
+  unrolled product scanning, 64 and 36 `mulu.l`
+  (`tools/gen_fe_m68k.py`).
 - **ECDSA:** Jacobian coordinates (a = -3), u1 G + u2 Q by interleaved
   width-4 NAF over affine tables of G, 3G, 5G, 7G (made once) and the
   same for Q, inverses by binary GCD. All of it variable time, which a
@@ -54,6 +69,10 @@ ok = c68k_rsa_public(x, xlen, n, nlen, e, elen);
 
 /* ECDSA: q uncompressed (0x04, x, y); sig raw (r, s) or DER */
 ok = c68k_ecdsa_verify_asn1(C68K_P384, q, qlen, hash, hash_len, sig, sig_len);
+
+/* X25519 (RFC 7748): little-endian, 32 bytes */
+c68k_x25519_base(my_public, my_secret);
+c68k_x25519(shared, my_secret, their_public);
 ```
 
 `crypt68k.h` also has the ECDSA check in steps (`c68k_ecdsa_scalars`,
@@ -75,6 +94,9 @@ br_x509_minimal_set_ecdsa(&xc, &br_ec_all_m31, c68k_br_ecdsa_vrfy_asn1);
 Not `br_ssl_engine_set_rsapub`: that one encrypts the premaster secret in
 RSA key exchange suites. Curves other than P-256 and P-384 go on to
 BearSSL's `br_ecdsa_i31`.
+
+`c68k_br_ec_c25519` is X25519 as a `br_ec_impl`, like BearSSL's
+`br_ec_c25519_m31`, for `br_ssl_engine_set_ec` (see the Time section).
 
 ## Building
 
@@ -100,16 +122,19 @@ the 64-bit `mulu.l`, so `-m68060` and `-m68020-60` builds use the C loop
 ## Tests
 
 - `test_kat` checks known answers made by `tests/gen_vectors.py` with
-  Python's integers: RSA on moduli of 512 to 4096 bits, and real ECDSA
+  Python's integers: RSA on moduli of 512 to 4096 bits; real ECDSA
   signatures on both curves over 20- to 64-byte hashes, through the raw,
   DER and step-by-step calls, with ones that must fail (another hash,
-  r + 1, s = 0, r = n, a key off the curve, malformed DER). It needs
-  nothing else, so it runs on the 68k machine itself.
+  r + 1, s = 0, r = n, a key off the curve, malformed DER); X25519
+  against RFC 7748's answers (and its iterated test: `test_kat long` for
+  the thousand rounds) and u = 0, 1, p, above p, with the top bit set. It
+  needs nothing else, so it runs on the 68k machine itself.
 - `test_bearssl` compares the drop-ins with BearSSL's own code: thousands
   of random RSA cases with the edges (x >= n, even moduli, leading zeros,
   wrong lengths, e = 0), PKCS#1 signatures from keys BearSSL generates,
-  and ECDSA keys and signatures BearSSL makes, broken every way that
-  matters, with the same answer from both.
+  ECDSA keys and signatures BearSSL makes, broken every way that
+  matters, with the same answer from both, and X25519 against
+  `br_ec_c25519_m31` on random points and scalars.
 
 ## Licence
 

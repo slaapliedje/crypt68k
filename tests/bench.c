@@ -1,5 +1,5 @@
 /*
- * bench - how long crypt68k's checks take on this machine: RSA-2048 and
+ * bench - how long crypt68k takes on this machine: X25519, RSA-2048 and
  * RSA-4096's public operation, ECDSA on P-256 and P-384, each repeated
  * for at least two seconds of CPU time (clock()). Integers only: some
  * 68k C libraries have no floating point.
@@ -70,9 +70,23 @@ static void time_ec(int curve, const char *name)
 	printf("  ECDSA %s verify   %6ld ms\n", name, t / n);
 }
 
+static void time_x25519(void)
+{
+	unsigned char out[32];
+	clock_t t0 = clock();
+	long n = 0, t;
+
+	do {
+		c68k_x25519(out, xvecs[0].k, xvecs[0].u);
+		n++;
+	} while ((t = ms(clock() - t0)) < 2000);
+	printf("  X25519                 %6ld ms\n", t / n);
+}
+
 int main(void)
 {
-	printf("crypt68k, a check at a time:\n");
+	printf("crypt68k, an operation at a time:\n");
+	time_x25519();
 	time_rsa(256);
 	time_rsa(512);
 	time_ec(C68K_P256, "P-256");

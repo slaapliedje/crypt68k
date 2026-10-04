@@ -111,5 +111,74 @@ out.append("static const struct ecvec { int curve; const unsigned char *q, *h, *
 for k, cid, hl, dl, want, what in ec:
     out.append("\t{ %d, ec%d_q, ec%d_h, ec%d_raw, ec%d_der, %d, %d, %d, \"%s\" },\n" % (cid, k, k, k, k, hl, dl, want, what))
 out.append("};\n")
+# X25519 (RFC 7748), checked against the RFC's own answers first
+P25519 = 2**255 - 19
+
+def x25519(k, u):
+    k = bytearray(k)
+    k[0] &= 248; k[31] &= 127; k[31] |= 64
+    k = int.from_bytes(k, 'little')
+    x1 = int.from_bytes(u, 'little') & ((1 << 255) - 1)
+    x2, z2, x3, z3, swap = 1, 0, x1, 1, 0
+    for t in range(254, -1, -1):
+        kt = (k >> t) & 1
+        swap ^= kt
+        if swap: x2, x3, z2, z3 = x3, x2, z3, z2
+        swap = kt
+        A = (x2 + z2) % P25519; AA = A * A % P25519
+        B = (x2 - z2) % P25519; BB = B * B % P25519
+        E = (AA - BB) % P25519
+        C = (x3 + z3) % P25519; D = (x3 - z3) % P25519
+        DA = D * A % P25519; CB = C * B % P25519
+        x3 = (DA + CB) ** 2 % P25519
+        z3 = x1 * (DA - CB) ** 2 % P25519
+        x2 = AA * BB % P25519
+        z2 = E * (AA + 121665 * E) % P25519
+    if swap: x2, x3, z2, z3 = x3, x2, z3, z2
+    return (x2 * pow(z2, P25519 - 2, P25519) % P25519).to_bytes(32, 'little')
+
+H = bytes.fromhex
+assert x25519(H("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4"),
+    H("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c")) == \
+    H("c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552")
+alice = H("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
+bob = H("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb")
+nine = bytes([9]) + bytes(31)
+assert x25519(alice, nine) == H("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a")
+assert x25519(bob, nine) == H("de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f")
+assert x25519(alice, x25519(bob, nine)) == H("4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742")
+k = u = nine
+for i in range(1000):
+    k, u = x25519(k, u), k
+    if i == 0: one = k
+assert one == H("422c8e7a6227d7bca1350b3e2bb7279f7897b87bb6854b783c60e80311ae3079")
+assert k == H("684cf59ba83309552800ef566f2f4d3c1c3887c49360e3875f2eb94d99532c51")
+
+xv = [("RFC 7748 5.2 #1", H("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4"),
+       H("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c")),
+      ("RFC 7748 5.2 #2", H("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d"),
+       H("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493")),
+      ("RFC 7748 6.1 Alice's key", alice, nine), ("RFC 7748 6.1 Bob's key", bob, nine),
+      ("RFC 7748 6.1 shared", alice, x25519(bob, nine)),
+      ("u = 0", random.randbytes(32), bytes(32)),
+      ("u = 1", random.randbytes(32), bytes([1]) + bytes(31)),
+      ("u = p (not reduced)", random.randbytes(32), P25519.to_bytes(32, 'little')),
+      ("u = p + 5", random.randbytes(32), (P25519 + 5).to_bytes(32, 'little')),
+      ("u = 2^255 - 1", random.randbytes(32), ((1 << 255) - 1).to_bytes(32, 'little'))]
+for i in range(12):
+    u = bytearray(random.randbytes(32))
+    if i % 3 == 0: u[31] |= 0x80     # the top bit, to be ignored
+    xv.append(("random %d" % i, random.randbytes(32), bytes(u)))
+for k2, (what, sc, uu) in enumerate(xv):
+    out.append(carr("x%d_k" % k2, sc))
+    out.append(carr("x%d_u" % k2, uu))
+    out.append(carr("x%d_out" % k2, x25519(sc, uu)))
+out.append("static const struct xvec { const unsigned char *k, *u, *out; const char *what; } xvecs[] = {\n")
+for k2, (what, sc, uu) in enumerate(xv):
+    out.append("\t{ x%d_k, x%d_u, x%d_out, \"%s\" },\n" % (k2, k2, k2, what))
+out.append("};\n")
+out.append(carr("x_iter1", one))
+out.append(carr("x_iter1000", k))
+
 open("tests/vectors.h", "w").write("".join(out))
-print("%d RSA, %d ECDSA vectors" % (len(rsa), len(ec)))
+print("%d RSA, %d ECDSA, %d X25519 vectors" % (len(rsa), len(ec), len(xv)))

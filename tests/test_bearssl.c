@@ -345,12 +345,50 @@ static void one_key(br_hmac_drbg_context *rng, int curve)
 }
 
 
+/* --- X25519 ------------------------------------------------------------------ */
+
+/* c68k_br_ec_c25519 against br_ec_c25519_m31: random points and scalars
+ * (some short), the base point, a top bit set */
+static void x25519s(int cases)
+{
+	int i;
+
+	for (i = 0; i < cases; i++) {
+		unsigned char ga[32], gb[32], k[32], ra[32], rb[32];
+		size_t klen = i % 7 == 0 ? 1 + rnd() % 32 : 32;
+		uint32_t a, b;
+
+		fill(ga, 32);
+		if (i % 5 == 0)
+			ga[31] |= 0x80;
+		memcpy(gb, ga, 32);
+		fill(k, klen);
+		a = c68k_br_ec_c25519.mul(ga, 32, k, klen, BR_EC_curve25519);
+		b = br_ec_c25519_m31.mul(gb, 32, k, klen, BR_EC_curve25519);
+		runs++;
+		if (a != b || memcmp(ga, gb, 32) != 0) {
+			fails++;
+			if (fails < 12)
+				printf("FAIL X25519 mul, case %d (k of %lu bytes)\n", i, (unsigned long)klen);
+		}
+		c68k_br_ec_c25519.mulgen(ra, k, klen, BR_EC_curve25519);
+		br_ec_c25519_m31.mulgen(rb, k, klen, BR_EC_curve25519);
+		runs++;
+		if (memcmp(ra, rb, 32) != 0) {
+			fails++;
+			if (fails < 12)
+				printf("FAIL X25519 mulgen, case %d\n", i);
+		}
+	}
+}
+
 int main(int argc, char **argv)
 {
 	int keys = argc > 2 ? atoi(argv[2]) : 40, i;
 	br_hmac_drbg_context rng;
 
 	publics(argc > 1 ? atoi(argv[1]) : 3000);
+	x25519s(500);
 	signatures();
 	br_hmac_drbg_init(&rng, &br_sha256_vtable, "test_ecdsa", 10);
 	for (i = 0; i < keys; i++) {

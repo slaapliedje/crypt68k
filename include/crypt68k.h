@@ -8,11 +8,17 @@
  * P-256 1.9 s, P-384 5.6 s; BearSSL's fastest code there takes 2.3 s,
  * 9.6 s, 5.5 s and 42 s.
  *
- * VARIABLE TIME. Everything here takes a time that depends on its
- * inputs. That is fine for checking signatures, whose inputs (the
- * signature, the public key, the hash) are all public; it is NOT fine
- * for anything secret. Never use these to sign, to decrypt, to encrypt a
- * secret with RSA, or for a key exchange.
+ * And X25519 (RFC 7748), the key exchange most TLS servers pick.
+ *
+ * TIME. The signature checks take a time that depends on their inputs.
+ * That is fine for checking signatures, whose inputs (the signature, the
+ * public key, the hash) are all public; it is NOT fine for anything
+ * secret: never use them to sign, to decrypt, or to encrypt a secret
+ * with RSA. X25519 is built the other way: no branch or memory access
+ * in it depends on the scalar or the point. But it can only be as
+ * constant-time as the CPU's multiply, and Motorola's MC68030 manual
+ * says MULU's time is data dependent (so is BearSSL's X25519 there):
+ * on the 68020/030 that is still being measured. See README.
  *
  * Numbers are big-endian byte strings. MIT licence (LICENSE).
  */
@@ -78,6 +84,19 @@ int c68k_ec_muladd(int curve, unsigned char *x, const unsigned char *q,
 
 /* x mod n = r? */
 int c68k_ec_x_is_r(int curve, const unsigned char *x, const unsigned char *r, size_t rlen);
+
+/* --- X25519 (constant time) ------------------------------------------------ */
+
+/*
+ * out = X25519(scalar, u) of RFC 7748: everything little-endian, 32
+ * bytes; the scalar clamped and u's top bit ignored, as the RFC says. An
+ * all-zero out means u was a point of small order; TLS's key exchange
+ * must refuse it (RFC 7748, section 6.1).
+ */
+void c68k_x25519(unsigned char *out, const unsigned char *scalar, const unsigned char *u);
+
+/* out = X25519(scalar, 9): the public key of a secret scalar */
+void c68k_x25519_base(unsigned char *out, const unsigned char *scalar);
 
 #ifdef __cplusplus
 }

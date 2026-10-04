@@ -3,12 +3,10 @@
  * crypt68k, MIT licence (LICENSE).
  */
 #include <string.h>
+#include "cpu.h"
 #include "mont.h"
 
-/* The 68020, 68030 and 68040 have mulu.l's 32x32 -> 64; the 68060 traps it
- * (and gcc's -m68020-60 names the 68060 too): C there. */
-#if defined(__GNUC__) && !defined(__mc68060__) && (defined(__mc68020__) \
-	|| defined(__mc68030__) || defined(__mc68040__))
+#if C68K_MULU64
 /* r[0..k-1] += a[0..k-1] * b, 0 < k <= 65536; the carry out. add.l to
  * memory leaves its carry in X for the high word. (No immediates: one
  * SVR4 toolchain's wrapper takes '#' for a comment.) About 2.7 us a

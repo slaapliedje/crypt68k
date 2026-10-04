@@ -28,6 +28,12 @@ uint32_t c68k_br_rsa_pkcs1_vrfy(const unsigned char *x, size_t xlen,
 	const unsigned char *hash_oid, size_t hash_len,
 	const br_rsa_public_key *pk, unsigned char *hash_out);
 
+/* X25519 as a br_ec_impl, like br_ec_c25519_m31 (constant time), for the
+ * key exchange: br_ssl_engine_set_ec(&cc.eng, &c68k_br_ec_c25519) when
+ * the client offers only X25519, or behind a br_ec_impl that hands
+ * curve25519 to it and the other curves to br_ec_all_m31. */
+extern const br_ec_impl c68k_br_ec_c25519;
+
 /* br_ecdsa_vrfy's: ASN.1 (DER) and raw signatures */
 uint32_t c68k_br_ecdsa_vrfy_asn1(const br_ec_impl *impl, const void *hash, size_t hash_len,
 	const br_ec_public_key *pk, const void *sig, size_t sig_len);
